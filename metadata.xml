@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+    <name>[REP] OPTrainer</name>
+    <directory>optrainer</directory>
+    <id>3760769206</id>
+    <description>
+Professional REPENTOGON-powered trainer and cheat menu for The Binding of Isaac: Repentance+.
+
+Hotkeys:
+F6: OP BUILD
+F7: GOD
+F8: MENU
+F9: HEAL
+F10: KILL ROOM
+    </description>
+    <version>1.3.8</version>
+    <visibility>public</visibility>
+    <tag id="Tweaks"/>
+    <tag id="Items"/>
+    <tag id="Active Items"/>
+    <tag id="Trinkets"/>
+    <tag id="Pills"/>
+    <tag id="Cards"/>
+    <tag id="Pickups"/>
+    <tag id="Player Characters"/>
+    <tag id="Rooms"/>
+    <tag id="Floors"/>
+    <tag id="Enemies"/>
+    <tag id="Bosses"/>
+</metadata>
