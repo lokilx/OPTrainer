@@ -41,6 +41,7 @@ Constants.ICONS = {
     smile = "\u{f118}",
     plus = "\u{f067}",
     arrow = "\u{f0b2}",
+    refresh = "\u{f021}",
 }
 
 Constants.PICKUP = {

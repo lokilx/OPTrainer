@@ -488,6 +488,39 @@ function Actions.ApplyHealthSliders()
     call(currentPlayer, "AddBrokenHearts", stats.brokenHearts - currentPlayer:GetBrokenHearts())
 end
 
+function Actions.ResetStats()
+    local currentPlayer = player()
+    local stats = Context.Config.Data.stats
+    if not currentPlayer or not stats then return end
+
+    -- Capture current black hearts so ApplyHealthSliders can remove them
+    -- (there is no direct "set black hearts" API; it works on deltas).
+    pcall(function() lastBlackHearts = currentPlayer:GetBlackHearts() end)
+
+    stats.damage = 0
+    stats.tears = 0
+    stats.range = 0
+    stats.luck = 0
+    stats.speed = 0
+    stats.shotSpeed = 0
+    stats.fireDelay = 0
+    stats.scale = 0
+    stats.size = 0
+    stats.health = 6
+    stats.soulHearts = 0
+    stats.blackHearts = 0
+    stats.boneHearts = 0
+    stats.rottenHearts = 0
+    stats.brokenHearts = 0
+    stats.damageMultiplier = 1.0
+    stats.damageTakenMultiplier = 1.0
+
+    Context.Config.Save(false)
+    Actions.ApplyHealthSliders()
+    refreshPlayerCache()
+    notify("Stats reset")
+end
+
 local function applyPlayerToggles(currentPlayer)
     local toggles = Context.Config.Data.toggles
     local anyActive = false
