@@ -9,7 +9,7 @@ local function key(name, fallback)
 end
 
 local defaults = {
-    version = "1.3.6",
+    version = "1.5.0",
     window = { x = 48, y = 32, visible = false },
     language = "en",
     theme = "Midnight",
@@ -69,6 +69,10 @@ local defaults = {
         rainbow = false,
         randomColors = false,
         noBlink = false,
+        oneHitKill = false,
+        homingTears = false,
+        piercingTears = false,
+        laserTears = false,
     },
     stats = {
         damage = 0,
@@ -86,6 +90,8 @@ local defaults = {
         boneHearts = 0,
         rottenHearts = 0,
         brokenHearts = 0,
+        damageMultiplier = 1.0,
+        damageTakenMultiplier = 1.0,
     },
     ui = {
         search = "",
@@ -95,6 +101,7 @@ local defaults = {
         buildDraftItems = "",
         importExport = "",
         selectedPlayer = 0,
+        roomIndex = 0,
     },
     utilities = { command = "", script = "", macro = "" },
 }

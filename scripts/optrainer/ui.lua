@@ -64,11 +64,18 @@ local function autoClose()
     end
 end
 
-local function action(fn)
-    return function(...)
-        fn(...)
-        autoClose()
-    end
+local pendingModalCallback = nil
+
+local function confirmAction(title, badge, description, callback)
+    pendingModalCallback = callback
+    W.UpdateText("OPTrainer.Modal.Badge", badge or "[Irreversible]")
+    W.UpdateText("OPTrainer.Modal.Title", title or "Action Confirmation")
+    W.UpdateText("OPTrainer.Modal.Desc", description or "Are you sure you want to execute this action?")
+    pcall(function()
+        if ImGui and ImGui.SetVisible then
+            ImGui.SetVisible("OPTrainer.Modal.Confirm", true)
+        end
+    end)
 end
 
 local function setToggle(key)
@@ -76,6 +83,25 @@ local function setToggle(key)
         Context.Config.Data.toggles[key] = value
         Context.Config.Save(false)
         Context.Actions.RefreshStats()
+    end
+end
+
+local function setExtremeToggle(key, name, badge, desc)
+    return function(value)
+        if value then
+            confirmAction("Enable " .. name, badge or "[Major gameplay change]", desc or ("Enables " .. name .. " modifier."), function()
+                setToggle(key)(true)
+            end)
+        else
+            setToggle(key)(false)
+        end
+    end
+end
+
+local function action(fn)
+    return function(...)
+        fn(...)
+        autoClose()
     end
 end
 
@@ -183,12 +209,13 @@ end
 
 local function updateCustomBuildButtons()
     local builds = Context.Config.Data.customBuilds or {}
-    for index = 1, 8 do
+    for index = 1, 16 do
         local build = builds[index]
         W.UpdateText("OPTrainer.CustomBuild.Apply." .. index, build and (icon("play") .. " " .. build.name) or (icon("plus") .. " Empty Slot"))
         W.UpdateText("OPTrainer.CustomBuild.Delete." .. index, build and (icon("trash") .. " Delete") or (icon("trash") .. " Empty"))
     end
 end
+
 
 local function addBuildFavoriteButton(parent, name, id)
     W.SmallButton(parent, id, icon("star") .. " Fav", function()
@@ -229,17 +256,29 @@ local function buildDashboard(tab)
         Context.Actions.RefreshStats()
     end)
     
-    W.Button(tab, "OPTrainer.Dashboard.OP", icon("bolt") .. " OP BUILD", action(function() Context.Actions.ApplyBuild("OP Build") end), "success")
+    W.Button(tab, "OPTrainer.Dashboard.OP", icon("bolt") .. " OP BUILD", action(function()
+        confirmAction("OP BUILD", "[Major gameplay change]", "Grants Godhead, Sacred Heart, Brimstone, and Tech X to player.", function() Context.Actions.ApplyBuild("OP Build") end)
+    end), "success")
+    W.Tooltip("OPTrainer.Dashboard.OP", "[Major gameplay change] Grant overpowered endgame build")
     W.SameLine(tab, "OPTrainer.Dashboard.OP.Same")
     W.Button(tab, "OPTrainer.Dashboard.Heal", icon("heart") .. " Heal", action(Context.Actions.Heal), "success")
 
-    W.Button(tab, "OPTrainer.Dashboard.Kill", icon("skull") .. " Kill Everything", action(Context.Actions.KillRoom), "danger")
+    W.Button(tab, "OPTrainer.Dashboard.Kill", icon("skull") .. " Kill Everything", action(function()
+        confirmAction("Kill Everything", "[Use with caution]", "Instantly kills all enemies in current room.", Context.Actions.KillRoom)
+    end), "danger")
+    W.Tooltip("OPTrainer.Dashboard.Kill", "[Use with caution] Instantly clear current room")
     W.SameLine(tab, "OPTrainer.Dashboard.Kill.Same")
-    W.Button(tab, "OPTrainer.Dashboard.Clear", icon("trash") .. " Clear Build", action(Context.Actions.ClearBuild), "danger")
+    W.Button(tab, "OPTrainer.Dashboard.Clear", icon("trash") .. " Clear Build", action(function()
+        confirmAction("Clear Build", "[Irreversible]", "Removes all items, trinkets, cards, and pills from your player.", Context.Actions.ClearBuild)
+    end), "danger")
+    W.Tooltip("OPTrainer.Dashboard.Clear", "[Irreversible] Wipe all inventory items")
 
     W.Button(tab, "OPTrainer.Dashboard.Restart", icon("play") .. " Restart Run", action(function()
-        if Isaac.ExecuteCommand then Isaac.ExecuteCommand("restart") end
+        confirmAction("Restart Run", "[Irreversible]", "Immediately restarts current run from Stage 1.", function()
+            if Isaac.ExecuteCommand then Isaac.ExecuteCommand("restart") end
+        end)
     end), "warning")
+    W.Tooltip("OPTrainer.Dashboard.Restart", "[Irreversible] Restart run")
     W.SameLine(tab, "OPTrainer.Dashboard.Restart.Same")
     W.Button(tab, "OPTrainer.Dashboard.Charge", icon("bolt") .. " Full Charge", action(Context.Actions.FullCharge))
 
@@ -274,7 +313,7 @@ local function buildBuilds(tab)
     W.Button(tab, "OPTrainer.CustomBuild.Import", icon("upload") .. " Import", function()
         if Context.Config.ImportBuilds(Context.Config.Data.ui.importExport or "") then updateCustomBuildButtons() end
     end, "warning")
-    for index = 1, 8 do
+    for index = 1, 16 do
         W.Button(tab, "OPTrainer.CustomBuild.Apply." .. index, icon("plus") .. " Empty Slot", action(function()
             local build = Context.Config.Data.customBuilds[index]
             if build then Context.Actions.ApplyBuild(build.name) end
@@ -304,29 +343,46 @@ local function buildItems(tab)
         W.SameLine(tab, "OPTrainer.Items.Result.Same." .. index)
         W.SmallButton(tab, "OPTrainer.Items.Fav." .. index, icon("star"), function() toggleFavoriteResult(index) end, "warning", 35)
         W.SameLine(tab, "OPTrainer.Items.Fav.Same." .. index)
+        W.SmallButton(tab, "OPTrainer.Items.Pedestal." .. index, icon("box"), function()
+            local entry = searchResults[index]
+            if entry and entry.type == "Collectible" then
+                Context.Actions.SpawnCollectiblePedestal(entry.id)
+            end
+        end, nil, 35)
+        W.Tooltip("OPTrainer.Items.Pedestal." .. index, "Spawn as pedestal in room")
+        W.SameLine(tab, "OPTrainer.Items.Pedestal.Same." .. index)
         W.SmallButton(tab, "OPTrainer.Items.Remove." .. index, icon("trash"), function() removeSearchResult(index) end, "danger", 35)
     end
 end
 
 local function buildPlayer(tab)
-    W.Separator(tab, "OPTrainer.Player.Header", icon("user") .. " Player")
+    W.Separator(tab, "OPTrainer.Player.Header", icon("user") .. " Player Toggles")
     W.Combo(tab, "OPTrainer.Player.PlayerSelect", "Target Player", getPlayerNames(), (Context.Config.Data.ui.selectedPlayer or 0) + 1, function(index)
         Context.Config.Data.ui.selectedPlayer = index - 1
         Context.Config.Save(false)
         Context.Actions.RefreshStats()
     end)
-    local rows = {
-        { "god", "God Mode" }, { "infiniteHp", "Infinite HP" }, { "infiniteCharge", "Infinite Charge" },
-        { "infiniteBatteries", "Infinite Batteries" }, { "infiniteCards", "Infinite Cards" }, { "infinitePills", "Infinite Pills" },
-        { "infiniteCoins", "Infinite Coins" }, { "infiniteKeys", "Infinite Keys" }, { "infiniteBombs", "Infinite Bombs" },
-        { "holyMantle", "Holy Mantle" }, { "flight", "Flight" }, { "spectralTears", "Spectral Tears" },
-        { "noCurse", "No Curse" }, { "revealMap", "Reveal Map" }, { "infiniteHolyMantle", "Infinite Holy Mantle" },
-        { "noBlink", "No Blink (Hide i-frames)" },
+    local standardRows = {
+        { "holyMantle", "Holy Mantle" }, { "flight", "Flight" },
+        { "spectralTears", "Spectral Tears" }, { "noCurse", "No Curse" },
+        { "revealMap", "Reveal Map" }, { "noBlink", "No Blink (Hide i-frames)" },
     }
-    for index, row in ipairs(rows) do
+    for index, row in ipairs(standardRows) do
         W.Toggle(tab, "OPTrainer.Player." .. row[1], row[2], Context.Config.Data.toggles[row[1]], setToggle(row[1]))
         if index % 2 == 1 then
             W.SameLine(tab, "OPTrainer.Player." .. row[1] .. ".Same")
+        end
+    end
+
+    W.Separator(tab, "OPTrainer.Player.TearHeader", icon("wand") .. " Tear Modifiers")
+    local tearRows = {
+        { "homingTears", "Homing Tears" }, { "piercingTears", "Piercing Tears" },
+        { "laserTears", "Laser Tears" },
+    }
+    for index, row in ipairs(tearRows) do
+        W.Toggle(tab, "OPTrainer.Player.Tears." .. row[1], row[2], Context.Config.Data.toggles[row[1]], setToggle(row[1]))
+        if index % 2 == 1 then
+            W.SameLine(tab, "OPTrainer.Player.Tears." .. row[1] .. ".Same")
         end
     end
 
@@ -372,6 +428,12 @@ local function buildWorld(tab)
     W.SameLine(tab, "OPTrainer.Room.Bombs.Same")
     W.Button(tab, "OPTrainer.Room.Keys", icon("key") .. " Spawn Keys", action(function() Context.Actions.SpawnPickup(pickup.KEY, 0, 6) end))
 
+    W.Button(tab, "OPTrainer.Room.Hearts", icon("heart") .. " Spawn Hearts", action(function() Context.Actions.SpawnPickup(pickup.HEART, 0, 6) end))
+    W.SameLine(tab, "OPTrainer.Room.Hearts.Same")
+    W.Button(tab, "OPTrainer.Room.SoulHearts", icon("heart") .. " Soul Hearts", action(function() Context.Actions.SpawnPickup(pickup.HEART, pickup.SOUL_HEART_SUBTYPE, 4) end))
+    W.SameLine(tab, "OPTrainer.Room.SoulHearts.Same")
+    W.Button(tab, "OPTrainer.Room.Batteries", icon("bolt") .. " Batteries", action(function() Context.Actions.SpawnPickup(pickup.BATTERY, 0, 2) end))
+
     W.Button(tab, "OPTrainer.Room.Beggar", icon("user") .. " Beggar", action(function() Context.Actions.SpawnSlot(slot.BEGGAR, 0, 1) end))
     W.SameLine(tab, "OPTrainer.Room.Beggar.Same")
     W.Button(tab, "OPTrainer.Room.Machine", icon("gear") .. " Slot Machine", action(function() Context.Actions.SpawnSlot(slot.SLOT_MACHINE, 0, 1) end))
@@ -397,6 +459,14 @@ local function buildWorld(tab)
         end
     end), nil, 140)
 
+    W.InputInt(tab, "OPTrainer.Teleport.RoomIndex", "Room Index", Context.Config.Data.ui.roomIndex or 0, function(value)
+        Context.Config.Data.ui.roomIndex = value
+    end)
+    W.SameLine(tab, "OPTrainer.Teleport.RoomIndex.Same")
+    W.Button(tab, "OPTrainer.Teleport.GoIndex", icon("door") .. " Go To Index", action(function()
+        Context.Actions.TeleportToRoomIndex(Context.Config.Data.ui.roomIndex or 0)
+    end), nil, 140)
+
     W.Separator(tab, "OPTrainer.Enemies.Header", icon("skull") .. " Enemies")
     local enemyNames = {}
     for _, enemy in ipairs(Context.Data.Enemies) do enemyNames[#enemyNames + 1] = enemy.name end
@@ -404,9 +474,15 @@ local function buildWorld(tab)
     W.SameLine(tab, "OPTrainer.Enemies.Select.Same")
     W.Button(tab, "OPTrainer.Enemies.Spawn", icon("plus") .. " Spawn Enemy", action(function() Context.Actions.SpawnEnemy(selectedEnemy) end), nil, 140)
 
-    W.Button(tab, "OPTrainer.Enemies.KillRoom", icon("skull") .. " Kill Room", action(Context.Actions.KillRoom), "danger")
+    W.Button(tab, "OPTrainer.Enemies.KillRoom", icon("skull") .. " Kill Room", action(function()
+        confirmAction("Kill Room", "[Use with caution]", "Instantly kills all enemies in current room.", Context.Actions.KillRoom)
+    end), "danger")
+    W.Tooltip("OPTrainer.Enemies.KillRoom", "[Use with caution] Kill all room enemies")
     W.SameLine(tab, "OPTrainer.Enemies.KillRoom.Same")
-    W.Button(tab, "OPTrainer.Enemies.KillBoss", icon("skull") .. " Kill Boss", action(Context.Actions.KillBoss), "danger")
+    W.Button(tab, "OPTrainer.Enemies.KillBoss", icon("skull") .. " Kill Boss", action(function()
+        confirmAction("Kill Boss", "[Use with caution]", "Instantly kills current boss entity.", Context.Actions.KillBoss)
+    end), "danger")
+    W.Tooltip("OPTrainer.Enemies.KillBoss", "[Use with caution] Kill room boss")
 
     W.Toggle(tab, "OPTrainer.Enemies.freezeEnemies", "Freeze", Context.Config.Data.toggles.freezeEnemies, setToggle("freezeEnemies"))
     W.SameLine(tab, "OPTrainer.Enemies.freezeEnemies.Same")
@@ -419,18 +495,105 @@ local function buildWorld(tab)
     W.Toggle(tab, "OPTrainer.Enemies.charmEnemies", "Charm", Context.Config.Data.toggles.charmEnemies, setToggle("charmEnemies"))
 end
 
+local function buildExtremeCheats(tab)
+    W.Separator(tab, "OPTrainer.Extreme.GodHeader", icon("skull") .. " Invincibility & God Mode")
+    W.Toggle(tab, "OPTrainer.Extreme.god", "God Mode", Context.Config.Data.toggles.god, setExtremeToggle("god", "God Mode", "[Major gameplay change]", "Complete invincibility to all damage sources."))
+    W.Tooltip("OPTrainer.Extreme.god", "[Major gameplay change] Prevent all player damage")
+    W.SameLine(tab, "OPTrainer.Extreme.god.Same")
+    W.Toggle(tab, "OPTrainer.Extreme.infiniteHp", "Infinite HP", Context.Config.Data.toggles.infiniteHp, setExtremeToggle("infiniteHp", "Infinite HP", "[Major gameplay change]", "Continuously refills player hearts."))
+    W.Tooltip("OPTrainer.Extreme.infiniteHp", "[Major gameplay change] Refill health pool")
+
+    W.Toggle(tab, "OPTrainer.Extreme.infiniteHolyMantle", "Infinite Holy Mantle", Context.Config.Data.toggles.infiniteHolyMantle, setExtremeToggle("infiniteHolyMantle", "Infinite Holy Mantle", "[Major gameplay change]", "Permanent Holy Mantle shield."))
+    W.Tooltip("OPTrainer.Extreme.infiniteHolyMantle", "[Major gameplay change] Permanent mantle shield")
+
+    W.Toggle(tab, "OPTrainer.Extreme.oneHitKill", "One-Hit Kill", Context.Config.Data.toggles.oneHitKill, setExtremeToggle("oneHitKill", "One-Hit Kill", "[Major gameplay change]", "Any hit on an enemy instantly kills it."))
+    W.Tooltip("OPTrainer.Extreme.oneHitKill", "[Major gameplay change] Instant kill on any hit")
+
+    W.Separator(tab, "OPTrainer.Extreme.DamageHeader", icon("chart") .. " Damage Modifiers")
+    statSlider(tab, "damageMultiplier", "Damage Multiplier", 1, 100)
+    statSlider(tab, "damageTakenMultiplier", "Damage Taken Multiplier", 0.1, 1)
+    W.SameLine(tab, "OPTrainer.Extreme.DamageTakenMultiplier.Same")
+    W.Button(tab, "OPTrainer.Extreme.DeleteProjectiles", icon("cross") .. " Delete Enemy Projectiles", action(Context.Actions.DeleteProjectiles))
+    W.Tooltip("OPTrainer.Extreme.DeleteProjectiles", "Removes all enemy tears, projectiles and lasers in the room")
+
+    W.Separator(tab, "OPTrainer.Extreme.ResourcesHeader", icon("bolt") .. " Infinite Resources")
+    local resourceToggles = {
+        { "infiniteCharge", "Infinite Charge" }, { "infiniteBatteries", "Infinite Batteries" },
+        { "infiniteCards", "Infinite Cards" }, { "infinitePills", "Infinite Pills" },
+        { "infiniteCoins", "Infinite Coins" }, { "infiniteKeys", "Infinite Keys" }, { "infiniteBombs", "Infinite Bombs" },
+    }
+    for index, row in ipairs(resourceToggles) do
+        W.Toggle(tab, "OPTrainer.Extreme." .. row[1], row[2], Context.Config.Data.toggles[row[1]], setExtremeToggle(row[1], row[2], "[Major gameplay change]", "Unlimited " .. row[2] .. "."))
+        W.Tooltip("OPTrainer.Extreme." .. row[1], "[Major gameplay change] Infinite resource modifier")
+        if index % 2 == 1 then
+            W.SameLine(tab, "OPTrainer.Extreme." .. row[1] .. ".Same")
+        end
+    end
+
+    W.Separator(tab, "OPTrainer.Extreme.CombatHeader", icon("skull") .. " Instant Combat & Room Actions")
+    W.Button(tab, "OPTrainer.Extreme.KillRoom", icon("skull") .. " Kill Room", action(function()
+        confirmAction("Kill Room", "[Use with caution]", "Instantly kill all enemies in current room.", Context.Actions.KillRoom)
+    end), "danger")
+    W.Tooltip("OPTrainer.Extreme.KillRoom", "[Use with caution] Kill all room enemies")
+    W.SameLine(tab, "OPTrainer.Extreme.KillRoom.Same")
+    W.Button(tab, "OPTrainer.Extreme.KillBoss", icon("skull") .. " Kill Boss", action(function()
+        confirmAction("Kill Boss", "[Use with caution]", "Instantly kill current boss entity.", Context.Actions.KillBoss)
+    end), "danger")
+    W.Tooltip("OPTrainer.Extreme.KillBoss", "[Use with caution] Kill room boss")
+
+    W.Button(tab, "OPTrainer.Extreme.ClearBuild", icon("trash") .. " Clear Build", action(function()
+        confirmAction("Clear Build", "[Irreversible]", "Remove all items, trinkets, cards, and pills from your player.", Context.Actions.ClearBuild)
+    end), "danger")
+    W.Tooltip("OPTrainer.Extreme.ClearBuild", "[Irreversible] Wipe all inventory items")
+    W.SameLine(tab, "OPTrainer.Extreme.ClearBuild.Same")
+    W.Button(tab, "OPTrainer.Extreme.Restart", icon("play") .. " Restart Run", action(function()
+        confirmAction("Restart Run", "[Irreversible]", "Immediately restart current run from Stage 1.", function()
+            if Isaac.ExecuteCommand then Isaac.ExecuteCommand("restart") end
+        end)
+    end), "warning")
+    W.Tooltip("OPTrainer.Extreme.Restart", "[Irreversible] Restart run from stage 1")
+
+    W.Separator(tab, "OPTrainer.Extreme.UnlocksHeader", icon("star") .. " Global Unlocks")
+    W.Button(tab, "OPTrainer.Extreme.UnlockChars", icon("user") .. " Unlock Characters", action(function()
+        confirmAction("Unlock Characters", "[Irreversible]", "Unlock all base and Tainted characters in game save.", Context.Actions.UnlockCharacters)
+    end), "success")
+    W.Tooltip("OPTrainer.Extreme.UnlockChars", "[Irreversible] Unlock full character roster")
+    W.SameLine(tab, "OPTrainer.Extreme.UnlockChars.Same")
+    W.Button(tab, "OPTrainer.Extreme.UnlockItems", icon("box") .. " Unlock Items", action(function()
+        confirmAction("Unlock Items", "[Irreversible]", "Unlock all item pool achievements.", Context.Actions.UnlockItems)
+    end), "success")
+    W.Tooltip("OPTrainer.Extreme.UnlockItems", "[Irreversible] Unlock item pool secrets")
+
+    W.Button(tab, "OPTrainer.Extreme.UnlockEverything", icon("star") .. " Unlock Everything", action(function()
+        confirmAction("Unlock Everything", "[Irreversible]", "Unlock ALL secrets and achievements in your game save.", Context.Actions.UnlockEverything)
+    end), "danger")
+    W.Tooltip("OPTrainer.Extreme.UnlockEverything", "[Irreversible] Unlock all secrets")
+end
+
 local function buildUnlocks(tab)
     W.Separator(tab, "OPTrainer.Unlocks.Header", icon("star") .. " Unlocks")
-    W.Button(tab, "OPTrainer.Unlocks.Characters", icon("user") .. " Unlock Characters", action(Context.Actions.UnlockCharacters), "success")
+    W.Button(tab, "OPTrainer.Unlocks.Characters", icon("user") .. " Unlock Characters", action(function()
+        confirmAction("Unlock Characters", "[Irreversible]", "Unlock all base & Tainted characters in your save.", Context.Actions.UnlockCharacters)
+    end), "success")
+    W.Tooltip("OPTrainer.Unlocks.Characters", "[Irreversible] Unlock all characters")
     W.SameLine(tab, "OPTrainer.Unlocks.Characters.Same")
-    W.Button(tab, "OPTrainer.Unlocks.Items", icon("box") .. " Unlock Items", action(Context.Actions.UnlockItems), "success")
+    W.Button(tab, "OPTrainer.Unlocks.Items", icon("box") .. " Unlock Items", action(function()
+        confirmAction("Unlock Items", "[Irreversible]", "Unlock all item pool secrets.", Context.Actions.UnlockItems)
+    end), "success")
+    W.Tooltip("OPTrainer.Unlocks.Items", "[Irreversible] Unlock item pool secrets")
     
-    W.Button(tab, "OPTrainer.Unlocks.All", icon("star") .. " Unlock Everything", action(Context.Actions.UnlockEverything), "danger")
+    W.Button(tab, "OPTrainer.Unlocks.All", icon("star") .. " Unlock Everything", action(function()
+        confirmAction("Unlock Everything", "[Irreversible]", "Unlock ALL secrets and achievements in your save.", Context.Actions.UnlockEverything)
+    end), "danger")
+    W.Tooltip("OPTrainer.Unlocks.All", "[Irreversible] Unlock all achievements")
 end
 
 local function buildInventory(tab)
     W.Separator(tab, "OPTrainer.Inventory.Header", icon("box") .. " Inventory Editor")
-    W.Button(tab, "OPTrainer.Inventory.ClearBuild", icon("trash") .. " Clear Build (Remove All Items)", action(Context.Actions.ClearBuild), "danger")
+    W.Button(tab, "OPTrainer.Inventory.ClearBuild", icon("trash") .. " Clear Build (Remove All Items)", action(function()
+        confirmAction("Clear Build", "[Irreversible]", "Remove all items, trinkets, cards, and pills.", Context.Actions.ClearBuild)
+    end), "danger")
+    W.Tooltip("OPTrainer.Inventory.ClearBuild", "[Irreversible] Clear all items and trinkets")
     W.Separator(tab, "OPTrainer.Inventory.ById", "By Item ID")
     W.InputInt(tab, "OPTrainer.Inventory.ItemId", "Item ID", inventoryItemId, function(value) inventoryItemId = value end)
     W.Button(tab, "OPTrainer.Inventory.GiveById", icon("plus") .. " Give Item", action(function()
@@ -508,7 +671,10 @@ local function buildQuickActions(tab)
     W.Separator(tab, "OPTrainer.QuickActions.RoomSec", icon("skull") .. " Room & Combat")
     W.Button(tab, "OPTrainer.QuickActions.ClearRoom", icon("cross") .. " Clear Room", action(Context.QuickActions.ClearCurrentRoom), "success")
     W.SameLine(tab, "OPTrainer.QuickActions.ClearRoom.Same")
-    W.Button(tab, "OPTrainer.QuickActions.KillEnemies", icon("skull") .. " Kill Enemies", action(Context.QuickActions.KillAllEnemies), "danger")
+    W.Button(tab, "OPTrainer.QuickActions.KillEnemies", icon("skull") .. " Kill Enemies", action(function()
+        confirmAction("Kill Enemies", "[Use with caution]", "Instantly kills all room enemies.", Context.QuickActions.KillAllEnemies)
+    end), "danger")
+    W.Tooltip("OPTrainer.QuickActions.KillEnemies", "[Use with caution] Kill all room enemies")
 end
 
 local function buildUtilities(tab)
@@ -613,12 +779,39 @@ function UI.Build()
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.Items", tabLabel("search", "Items"), "Items", buildItems)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.Player", tabLabel("user", "Player"), "Player", buildPlayer)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.World", tabLabel("map", "World"), "World", buildWorld)
+    addTab("OPTrainer.Tabs", "OPTrainer.Tab.Extreme", tabLabel("skull", "Extreme Cheats", "Extreme"), "Extreme Cheats", buildExtremeCheats)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.Unlocks", tabLabel("star", "Unlocks"), "Unlocks", buildUnlocks)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.Inventory", tabLabel("box", "Inventory", "Inv"), "Inventory", buildInventory)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.QuickActions", tabLabel("play", "Quick Actions", "Q Actions"), "Quick Actions", buildQuickActions)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.Utilities", tabLabel("terminal", "Utilities", "Tools"), "Utilities", buildUtilities)
     addTab("OPTrainer.Tabs", "OPTrainer.Tab.Settings", tabLabel("gear", "Settings", "Prefs"), "Settings", buildSettings)
     W.Text(ids().WINDOW_ID, "OPTrainer.Footer", versionText(), true, true)
+
+    -- Confirmation Modal Window
+    pcall(function()
+        if ImGui.ElementExists and ImGui.ElementExists("OPTrainer.Modal.Confirm") then
+            ImGui.RemoveWindow("OPTrainer.Modal.Confirm")
+        end
+    end)
+    ImGui.CreateWindow("OPTrainer.Modal.Confirm", icon("skull") .. " Confirmation Required")
+    ImGui.SetVisible("OPTrainer.Modal.Confirm", false)
+    W.ApplyWindowStyle("OPTrainer.Modal.Confirm", 1.0)
+    W.Text("OPTrainer.Modal.Confirm", "OPTrainer.Modal.Badge", "[Irreversible]", false, true)
+    W.Text("OPTrainer.Modal.Confirm", "OPTrainer.Modal.Title", "Action Confirmation", false, true)
+    W.Text("OPTrainer.Modal.Confirm", "OPTrainer.Modal.Desc", "Are you sure you want to execute this action?", true, true)
+    W.Button("OPTrainer.Modal.Confirm", "OPTrainer.Modal.ConfirmBtn", icon("cross") .. " Proceed", function()
+        if pendingModalCallback then
+            local cb = pendingModalCallback
+            pendingModalCallback = nil
+            ImGui.SetVisible("OPTrainer.Modal.Confirm", false)
+            cb()
+        end
+    end, "danger")
+    W.SameLine("OPTrainer.Modal.Confirm", "OPTrainer.Modal.SameLine")
+    W.Button("OPTrainer.Modal.Confirm", "OPTrainer.Modal.CancelBtn", "Cancel", function()
+        pendingModalCallback = nil
+        ImGui.SetVisible("OPTrainer.Modal.Confirm", false)
+    end)
 
     local savedFilter = Context.Config.Data.ui.itemFilter or "Collectibles"
     for i, name in ipairs(filters) do

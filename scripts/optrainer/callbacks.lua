@@ -48,7 +48,7 @@ function Callbacks.Register()
     end)
 
     mod:AddCallback(ModCallbacks.MC_ENTITY_TAKE_DMG, function(_, entity, amount, flags, source, countdown)
-        local ok, result = pcall(Context.Actions.ShouldBlockDamage, entity, amount, flags)
+        local ok, result = pcall(Context.Actions.OnEntityTakeDamage, entity, amount, flags, source)
         if ok then
             return result
         end
@@ -59,6 +59,7 @@ function Callbacks.Register()
         end
         return nil
     end)
+
 
     mod:AddCallback(ModCallbacks.MC_PRE_PLAYER_RENDER, function(_, player, offset)
         local toggles = Context.Config.Data.toggles

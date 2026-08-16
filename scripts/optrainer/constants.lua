@@ -1,6 +1,6 @@
 local Constants = {}
 
-Constants.VERSION = "1.3.6"
+Constants.VERSION = "1.5.0"
 Constants.REPENTOGON_MIN_VERSION = "0.4.6"
 
 Constants.KEYS = {
@@ -47,11 +47,16 @@ Constants.PICKUP = {
     COIN = PickupVariant and PickupVariant.PICKUP_COIN or 20,
     KEY = PickupVariant and PickupVariant.PICKUP_KEY or 30,
     BOMB = PickupVariant and PickupVariant.PICKUP_BOMB or 40,
+    HEART = PickupVariant and PickupVariant.PICKUP_HEART or 10,
+    SOUL_HEART_SUBTYPE = HeartSubType and HeartSubType.HEART_SOUL or 3,
+    BLACK_HEART_SUBTYPE = HeartSubType and HeartSubType.HEART_BLACK or 6,
+    ETERNAL_HEART_SUBTYPE = HeartSubType and HeartSubType.HEART_ETERNAL or 4,
+    BATTERY = PickupVariant and PickupVariant.PICKUP_LIL_BATTERY or 90,
     CHEST = PickupVariant and PickupVariant.PICKUP_CHEST or 50,
     GOLDEN_CHEST = PickupVariant and PickupVariant.PICKUP_LOCKEDCHEST or 60,
     RED_CHEST = PickupVariant and PickupVariant.PICKUP_REDCHEST or 360,
-    MEGA_CHEST = PickupVariant and PickupVariant.PICKUP_MEGACHEST or 340,
-    BOMB_CHEST = PickupVariant and PickupVariant.PICKUP_BOMBCHEST or 390,
+    MEGA_CHEST = PickupVariant and PickupVariant.PICKUP_MEGACHEST or 57,
+    BOMB_CHEST = PickupVariant and PickupVariant.PICKUP_BOMBCHEST or 51,
 }
 
 Constants.SLOT = {

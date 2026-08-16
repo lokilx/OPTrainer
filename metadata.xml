@@ -12,8 +12,10 @@ F7: GOD
 F8: MENU
 F9: HEAL
 F10: KILL ROOM
-    </description>
-    <version>1.3.8</version>
+
+🐞 Found a bug? Please report it here:
+https://github.com/lokilx/OPTrainer/issues</description>
+    <version>1.5.1</version>
     <visibility>public</visibility>
     <tag id="Tweaks"/>
     <tag id="Items"/>

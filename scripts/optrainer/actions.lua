@@ -244,10 +244,11 @@ function Actions.SaveCustomBuild(name, itemText)
         end
     end
 
-    if #customBuilds >= 8 then
-        notify("Limit reached (8 custom builds)")
+    if #customBuilds >= 16 then
+        notify("Limit reached (16 custom builds)")
         return false
     end
+
 
     customBuilds[#customBuilds + 1] = { name = name, items = items }
     Context.Config.Save(true)
@@ -347,6 +348,66 @@ function Actions.TeleportStage(stage)
         Isaac.ExecuteCommand("stage " .. tostring(stage))
     end
 end
+
+function Actions.TeleportToRoomIndex(index)
+    if not index or index < 0 then return end
+    if Isaac.ExecuteCommand then
+        Isaac.ExecuteCommand("goto " .. tostring(index))
+        notify("Teleporting to room " .. tostring(index) .. "...")
+    end
+end
+
+function Actions.SpawnCollectiblePedestal(id)
+    local room = Context.Game:GetRoom()
+    if not room or not id then return end
+    local entityType = EntityType and EntityType.ENTITY_PICKUP or 5
+    local pedestalVariant = PickupVariant and PickupVariant.PICKUP_COLLECTIBLE or 100
+    local position = room:FindFreePickupSpawnPosition(room:GetCenterPos(), 0, true)
+    spawnAt(position, entityType, pedestalVariant, id)
+    notify("Spawned item " .. tostring(id) .. " as pedestal")
+end
+
+function Actions.DeleteProjectiles()
+    local removed = 0
+    local tearType = EntityType and EntityType.ENTITY_TEAR or 2
+    local projectileType = EntityType and EntityType.ENTITY_PROJECTILE or 9
+    local laserType = EntityType and EntityType.ENTITY_LASER or 7
+    local playerType = EntityType and EntityType.ENTITY_PLAYER or 1
+    for _, entity in ipairs(Isaac.GetRoomEntities()) do
+        local entityType = entity.Type
+        if entityType ~= tearType and entityType ~= projectileType and entityType ~= laserType then
+            goto continue
+        end
+
+        local isPlayerProjectile = false
+        if entityType == tearType then
+            -- Enemy tears use variants >= 14; player tears are variants 0-13
+            pcall(function()
+                if entity.Variant < 14 then
+                    isPlayerProjectile = true
+                end
+            end)
+        elseif entityType == laserType then
+            local laser = entity:ToLaser()
+            pcall(function()
+                if laser and laser.Shooter and laser.Shooter.Type == playerType then
+                    isPlayerProjectile = true
+                end
+            end)
+        elseif entityType == projectileType then
+            -- EntityProjectile is always a player projectile; enemy bullets are tears
+            isPlayerProjectile = true
+        end
+
+        if not isPlayerProjectile then
+            pcall(function() entity:Remove() end)
+            removed = removed + 1
+        end
+        ::continue::
+    end
+    notify(removed > 0 and ("Cleared " .. removed .. " projectiles") or "No enemy projectiles")
+end
+
 
 function Actions.UnlockCharacters()
     local data = Isaac.GetPersistentGameData and Isaac.GetPersistentGameData()
@@ -584,7 +645,11 @@ end
 function Actions.EvaluateCache(currentPlayer, cacheFlag)
     local stats = Context.Config.Data.stats
     local toggles = Context.Config.Data.toggles
-    if CacheFlag and cacheFlag == CacheFlag.CACHE_DAMAGE then currentPlayer.Damage = currentPlayer.Damage + stats.damage
+    if CacheFlag and cacheFlag == CacheFlag.CACHE_DAMAGE then
+        currentPlayer.Damage = currentPlayer.Damage + stats.damage
+        if stats.damageMultiplier and stats.damageMultiplier ~= 1.0 then
+            currentPlayer.Damage = currentPlayer.Damage * stats.damageMultiplier
+        end
     elseif CacheFlag and cacheFlag == CacheFlag.CACHE_FIREDELAY then currentPlayer.MaxFireDelay = math.max(1, currentPlayer.MaxFireDelay - stats.tears - stats.fireDelay)
     elseif CacheFlag and cacheFlag == CacheFlag.CACHE_RANGE then currentPlayer.TearRange = currentPlayer.TearRange + stats.range * 40
     elseif CacheFlag and cacheFlag == CacheFlag.CACHE_SPEED then currentPlayer.MoveSpeed = math.min(3, currentPlayer.MoveSpeed + stats.speed)
@@ -592,16 +657,50 @@ function Actions.EvaluateCache(currentPlayer, cacheFlag)
     elseif CacheFlag and cacheFlag == CacheFlag.CACHE_LUCK then currentPlayer.Luck = currentPlayer.Luck + stats.luck
     elseif CacheFlag and cacheFlag == CacheFlag.CACHE_SIZE then currentPlayer.SpriteScale = currentPlayer.SpriteScale + Vector(stats.scale + stats.size, stats.scale + stats.size)
     elseif CacheFlag and cacheFlag == CacheFlag.CACHE_FLYING and toggles.flight then currentPlayer.CanFly = true
-    elseif CacheFlag and cacheFlag == CacheFlag.CACHE_TEARFLAG and toggles.spectralTears then currentPlayer.TearFlags = currentPlayer.TearFlags | TearFlags.TEAR_SPECTRAL end
+    elseif CacheFlag and cacheFlag == CacheFlag.CACHE_TEARFLAG then
+        if toggles.spectralTears then currentPlayer.TearFlags = currentPlayer.TearFlags | TearFlags.TEAR_SPECTRAL end
+        if toggles.homingTears then currentPlayer.TearFlags = currentPlayer.TearFlags | TearFlags.TEAR_HOMING end
+        if toggles.piercingTears then currentPlayer.TearFlags = currentPlayer.TearFlags | TearFlags.TEAR_PIERCING end
+        if toggles.laserTears then currentPlayer.TearFlags = currentPlayer.TearFlags | TearFlags.TEAR_LASER end
+    end
 end
+
 
 function Actions.RefreshStats()
     refreshPlayerCache()
 end
 
+function Actions.OnEntityTakeDamage(entity, amount, flags, source)
+    if not entity then return nil end
+    local config = Context and Context.Config and Context.Config.Data
+    if not config or not config.toggles then return nil end
+    local toggles = config.toggles
+
+    local entityType = EntityType and EntityType.ENTITY_PLAYER or 1
+    if entity.Type == entityType then
+        return Actions.ShouldBlockDamage(entity, amount, flags)
+    end
+
+    if toggles.oneHitKill then
+        local npc = entity:ToNPC()
+        if npc and npc:IsVulnerableEnemy() and not npc:HasEntityFlags(EntityFlag.FLAG_FRIENDLY) then
+            local data = npc:GetData()
+            if not data.OPTrainerOneHit then
+                data.OPTrainerOneHit = true
+                pcall(function()
+                    npc:TakeDamage(99999, flags or 0, source, 1)
+                end)
+                data.OPTrainerOneHit = nil
+            end
+        end
+    end
+
+    return nil
+end
+
 function Actions.ShouldBlockDamage(entity, amount, flags)
-    local toggles = Context and Context.Config and Context.Config.Data and Context.Config.Data.toggles
-    if not toggles then
+    local config = Context and Context.Config and Context.Config.Data
+    if not config or not config.toggles then
         return nil
     end
 
@@ -609,9 +708,16 @@ function Actions.ShouldBlockDamage(entity, amount, flags)
         return nil
     end
 
+    local toggles = config.toggles
+    local stats = config.stats or {}
+
     if toggles.god then
         return false
     end
+
+    local finalAmount = amount
+    local finalFlags = flags or 0
+    local countdown = nil
 
     if toggles.noBlink then
         local data = entity:GetData()
@@ -620,18 +726,24 @@ function Actions.ShouldBlockDamage(entity, amount, flags)
             return false
         elseif amount and amount > 0 then
             data.OPTrainerCustomIFrames = 30 -- Give standard 1 second of invincibility
-            -- Allow the damage through but try to clear the blink/i-frame countdown.
-            -- Use the REPENTOGON table-return format if available, otherwise allow damage normally.
-            local tableReturn = {
-                Damage = amount,
-                DamageFlags = flags or 0,
-                DamageCountdown = 0
-            }
-            return tableReturn
+            countdown = 0
         end
+    end
+
+    if stats.damageTakenMultiplier and stats.damageTakenMultiplier < 1.0 and amount and amount > 0 then
+        finalAmount = math.max(1, math.floor(amount * stats.damageTakenMultiplier + 0.5))
+    end
+
+    if finalAmount ~= amount or countdown ~= nil then
+        return {
+            Damage = finalAmount,
+            DamageFlags = finalFlags,
+            DamageCountdown = countdown or 0
+        }
     end
 
     return nil
 end
+
 
 return Actions
